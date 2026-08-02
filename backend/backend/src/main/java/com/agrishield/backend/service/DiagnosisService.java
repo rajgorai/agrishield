@@ -1,5 +1,8 @@
 package com.agrishield.backend.service;
 
+import com.agrishield.backend.service.MLClientService;
+import com.agrishield.backend.dto.MLPrediction;
+
 import com.agrishield.backend.entity.Diagnosis;
 import com.agrishield.backend.entity.Disease;
 import com.agrishield.backend.repository.DiagnosisRepository;
@@ -17,49 +20,54 @@ public class DiagnosisService {
     private final ImageStorageService imageStorageService;
     private final DiseaseRepository diseaseRepository;
     private final DiagnosisRepository diagnosisRepository;
+    private final MLClientService mlClientService;  // NEW
 
     public DiagnosisService(ImageStorageService imageStorageService,
                             DiseaseRepository diseaseRepository,
-                            DiagnosisRepository diagnosisRepository) {
+                            DiagnosisRepository diagnosisRepository,
+                            MLClientService mlClientService) {
         this.imageStorageService = imageStorageService;
         this.diseaseRepository = diseaseRepository;
         this.diagnosisRepository = diagnosisRepository;
+        this.mlClientService = mlClientService;  // NEW
     }
 
-    public Map<String, Object> diagnose(MultipartFile image, String diseaseLabel, UUID userId, String language) throws Exception {
+    public Map<String, Object> diagnose(MultipartFile image, UUID userId, String language) throws Exception {
         // 1. Upload image to MinIO
         String imageUrl = imageStorageService.uploadImage(image);
 
-        // 2. Find disease in database
+        // 2. Call Python AI service to get prediction (REAL AI)
+        MLPrediction prediction = mlClientService.predict(image);
+        String diseaseLabel = prediction.getTopClass();
+        double confidence = prediction.getConfidence();
+
+        // 3. Find disease in database
         Disease disease = diseaseRepository.findByModelClassLabel(diseaseLabel)
                 .orElseThrow(() -> new RuntimeException("Disease not found: " + diseaseLabel));
 
-        // 3. Create and save diagnosis record
+        // 4. Create and save diagnosis record
         Diagnosis diagnosis = new Diagnosis();
         diagnosis.setUserId(userId);
         diagnosis.setDiseaseId(disease.getId());
         diagnosis.setImageUrl(imageUrl);
-        diagnosis.setConfidenceScore(0.95); // Mock score for now (AI will replace this)
+        diagnosis.setConfidenceScore(confidence);
         diagnosis.setLanguageUsed(language);
 
-        // ✅ NEW: Set top3 predictions as a JSON object (mock data)
-        diagnosis.setTop3Predictions(Map.of(
-                "top1", Map.of("label", diseaseLabel, "confidence", 0.95),
-                "top2", Map.of("label", "Mock_Disease_2", "confidence", 0.03),
-                "top3", Map.of("label", "Mock_Disease_3", "confidence", 0.02)
-        ));
+        // Save top3 predictions as JSON
+        diagnosis.setTop3Predictions(prediction.getTop3());
 
         diagnosisRepository.save(diagnosis);
 
-        // 4. Build response
+        // 5. Build response
         Map<String, Object> response = new HashMap<>();
         response.put("diagnosisId", diagnosis.getId().toString());
         response.put("diseaseName", getDiseaseNameByLanguage(disease, language));
         response.put("cropName", disease.getCropName());
         response.put("severity", disease.getSeverity());
-        response.put("confidence", diagnosis.getConfidenceScore());
+        response.put("confidence", confidence);
         response.put("treatment", getTreatmentByLanguage(disease, language));
         response.put("imageUrl", imageUrl);
+        response.put("top3", prediction.getTop3());
 
         return response;
     }
