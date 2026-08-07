@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.util.Base64;
 import java.util.UUID;
 
 @Service
@@ -28,21 +30,16 @@ public class ImageStorageService {
     }
 
     public String uploadImage(MultipartFile file) throws Exception {
-        // Validate file type
         String contentType = file.getContentType();
         if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
             throw new IllegalArgumentException("Only JPG and PNG images are allowed");
         }
-
-        // Validate file size (10MB max)
         if (file.getSize() > 10 * 1024 * 1024) {
             throw new IllegalArgumentException("File size exceeds 10MB limit");
         }
 
-        // Generate unique filename
         String fileName = UUID.randomUUID().toString() + ".jpg";
 
-        // Upload to MinIO
         minioClient.putObject(
                 PutObjectArgs.builder()
                         .bucket(bucketName)
@@ -52,7 +49,32 @@ public class ImageStorageService {
                         .build()
         );
 
-        // Return the URL
+        return "http://localhost:9000/" + bucketName + "/" + fileName;
+    }
+
+    public String uploadBase64Image(String base64Data, String fileName) throws Exception {
+        byte[] imageBytes = Base64.getDecoder().decode(base64Data);
+        minioClient.putObject(
+                PutObjectArgs.builder()
+                        .bucket(bucketName)
+                        .object(fileName)
+                        .stream(new ByteArrayInputStream(imageBytes), imageBytes.length, -1)
+                        .contentType("image/png")
+                        .build()
+        );
+        return "http://localhost:9000/" + bucketName + "/" + fileName;
+    }
+
+    // -------- NEW: UPLOAD RAW BYTES (for audio) --------
+    public String uploadBytes(byte[] data, String fileName, String contentType) throws Exception {
+        minioClient.putObject(
+                PutObjectArgs.builder()
+                        .bucket(bucketName)
+                        .object(fileName)
+                        .stream(new ByteArrayInputStream(data), data.length, -1)
+                        .contentType(contentType)
+                        .build()
+        );
         return "http://localhost:9000/" + bucketName + "/" + fileName;
     }
 }
