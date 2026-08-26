@@ -1,0 +1,173 @@
+package com.agrishield.backend.service;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import jakarta.annotation.PostConstruct;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+@Service
+public class GeminiService {
+
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final String apiKey;
+    private String activeModelName = "gemini-3.6-flash"; // Safe fallback
+    private final String modelsUrl = "https://generativelanguage.googleapis.com/v1/models";
+
+    public GeminiService(@Value("${spring.ai.google.gemini.api-key}") String apiKey) {
+        this.apiKey = apiKey;
+    }
+
+    @PostConstruct
+    public void init() {
+        try {
+            System.out.println("🚀 [Gemini] Fetching available models to find the latest Flash...");
+            String url = modelsUrl + "?key=" + apiKey;
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    null,
+                    Map.class
+            );
+
+            if (response.getBody() != null && response.getBody().containsKey("models")) {
+                List<Map<String, Object>> models = (List<Map<String, Object>>) response.getBody().get("models");
+
+                // Find all Flash models that support generateContent
+                List<String> flashCandidates = models.stream()
+                        .filter(m -> {
+                            String name = (String) m.get("name");
+                            if (name == null || !name.contains("flash")) return false;
+                            List<String> methods = (List<String>) m.get("supportedGenerationMethods");
+                            return methods != null && methods.contains("generateContent");
+                        })
+                        .map(m -> (String) m.get("name"))
+                        .collect(Collectors.toList());
+
+                System.out.println("📋 [Gemini] Found Flash candidates: " + flashCandidates);
+
+                // Sort by version (highest first)
+                Pattern versionPattern = Pattern.compile("gemini-(\\d+\\.\\d+)-flash");
+                flashCandidates.sort((a, b) -> {
+                    Matcher ma = versionPattern.matcher(a);
+                    Matcher mb = versionPattern.matcher(b);
+                    if (!ma.find() || !mb.find()) return 0;
+                    double va = Double.parseDouble(ma.group(1));
+                    double vb = Double.parseDouble(mb.group(1));
+                    return Double.compare(vb, va); // Descending
+                });
+
+                // Test each candidate to find the first working one
+                String workingModel = null;
+                for (String candidate : flashCandidates) {
+                    String modelName = candidate.replace("models/", "");
+                    if (testModel(modelName)) {
+                        workingModel = modelName;
+                        System.out.println("✅ [Gemini] Verified working model: " + workingModel);
+                        break;
+                    }
+                }
+
+                if (workingModel != null) {
+                    activeModelName = workingModel;
+                } else {
+                    System.out.println("⚠️ [Gemini] No working Flash model found. Using fallback: " + activeModelName);
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ [Gemini] Could not auto-detect models. Using fallback: " + activeModelName);
+            System.out.println("   Error: " + e.getMessage());
+        }
+    }
+
+    private boolean testModel(String modelName) {
+        try {
+            String testUrl = "https://generativelanguage.googleapis.com/v1/models/" + modelName + ":generateContent?key=" + apiKey;
+
+            Map<String, Object> requestBody = new HashMap<>();
+            Map<String, Object> contents = new HashMap<>();
+            contents.put("parts", List.of(Map.of("text", "ping")));
+            requestBody.put("contents", List.of(contents));
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    testUrl,
+                    HttpMethod.POST,
+                    requestEntity,
+                    Map.class
+            );
+
+            return response.getStatusCode().is2xxSuccessful();
+        } catch (Exception e) {
+            return false; // This model doesn't work
+        }
+    }
+
+    // ===== UPDATED: askQuestion with Fallback Logic =====
+    public String askQuestion(String question) {
+        // List of models to try: current active, then known working fallbacks
+        List<String> modelsToTry = new ArrayList<>();
+        modelsToTry.add(activeModelName);                 // First try the detected model
+        modelsToTry.add("gemini-3.6-flash");              // Fallback 1
+        modelsToTry.add("gemini-3.5-flash");              // Fallback 2
+        // You can add more if needed, e.g., "gemini-3.7-flash", "gemini-3.1-flash"
+
+        for (String model : modelsToTry) {
+            try {
+                String apiUrl = "https://generativelanguage.googleapis.com/v1/models/" + model + ":generateContent";
+
+                Map<String, Object> requestBody = new HashMap<>();
+                Map<String, Object> contents = new HashMap<>();
+                contents.put("parts", List.of(Map.of("text", question)));
+                requestBody.put("contents", List.of(contents));
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+
+                HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+
+                String url = apiUrl + "?key=" + apiKey;
+                ResponseEntity<Map> response = restTemplate.exchange(
+                        url,
+                        HttpMethod.POST,
+                        requestEntity,
+                        Map.class
+                );
+
+                // If response is 503 (Service Unavailable), try next model
+                if (response.getStatusCode() == HttpStatus.SERVICE_UNAVAILABLE) {
+                    System.out.println("⚠️ [Gemini] Model " + model + " is overloaded (503). Trying next fallback.");
+                    continue;
+                }
+
+                Map<String, Object> responseBody = response.getBody();
+                if (responseBody != null && responseBody.containsKey("candidates")) {
+                    List<Map<String, Object>> candidates = (List<Map<String, Object>>) responseBody.get("candidates");
+                    if (!candidates.isEmpty()) {
+                        Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
+                        List<Map<String, Object>> parts = (List<Map<String, Object>>) content.get("parts");
+                        if (!parts.isEmpty()) {
+                            return (String) parts.get(0).get("text");
+                        }
+                    }
+                }
+                // If we got a response but no content, treat as failure and try next model
+                System.out.println("⚠️ [Gemini] Model " + model + " returned empty response. Trying next fallback.");
+            } catch (Exception e) {
+                System.out.println("⚠️ [Gemini] Model " + model + " failed with error: " + e.getMessage() + ". Trying next.");
+                // Continue to next model
+            }
+        }
+
+        // If all models fail
+        return "I'm having trouble connecting to the AI right now. All models are currently unavailable. Please try again later.";
+    }
+}

@@ -13,12 +13,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
+
+    // Paths that should be publicly accessible without JWT
+    private static final List<String> PUBLIC_PATHS = List.of(
+            "/api/auth/",
+            "/hello",
+            "/api/chat/"
+    );
 
     public JwtAuthenticationFilter(JwtUtil jwtUtil, UserDetailsService userDetailsService) {
         this.jwtUtil = jwtUtil;
@@ -29,9 +37,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
+        String path = request.getRequestURI();
+
+        // ===== DEBUG: Print every request that hits this filter =====
+        System.out.println("🔍 JwtAuthenticationFilter: Processing " + path);
+
+        // ===== SKIP JWT AUTH FOR PUBLIC PATHS =====
+        for (String publicPath : PUBLIC_PATHS) {
+            if (path.startsWith(publicPath)) {
+                System.out.println("✅ Skipping JWT auth for public path: " + path);
+                chain.doFilter(request, response);
+                return;
+            }
+        }
+
         final String authHeader = request.getHeader("Authorization");
 
-        // If there is NO Authorization header, just continue (allow public endpoints)
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             chain.doFilter(request, response);
             return;
@@ -51,8 +72,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception e) {
-            // Token is invalid/expired/malformed - just ignore it and continue
-            // This allows public endpoints to work even with a bad token
+            // Invalid token - just continue
         }
 
         chain.doFilter(request, response);
