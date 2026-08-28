@@ -10,6 +10,10 @@ import com.agrishield.backend.repository.UserRepository;
 import com.agrishield.backend.security.JwtUtil;
 import com.agrishield.backend.service.DiagnosisService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,19 +30,18 @@ public class DiagnosisController {
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
     private final DiagnosisRepository diagnosisRepository;
-    private final DiseaseRepository diseaseRepository; // <-- ADDED
+    private final DiseaseRepository diseaseRepository;
 
-    // ===== UPDATED CONSTRUCTOR =====
     public DiagnosisController(DiagnosisService diagnosisService,
                                JwtUtil jwtUtil,
                                UserRepository userRepository,
                                DiagnosisRepository diagnosisRepository,
-                               DiseaseRepository diseaseRepository) { // <-- ADDED
+                               DiseaseRepository diseaseRepository) {
         this.diagnosisService = diagnosisService;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.diagnosisRepository = diagnosisRepository;
-        this.diseaseRepository = diseaseRepository; // <-- ADDED
+        this.diseaseRepository = diseaseRepository;
     }
 
     // ===== POST: /api/diagnose =====
@@ -71,9 +74,13 @@ public class DiagnosisController {
         }
     }
 
-    // ===== GET: /api/diagnoses (History) =====
+    // ===== GET: /api/diagnoses (History with Pagination) =====
     @GetMapping("/diagnoses")
-    public ResponseEntity<?> getUserDiagnoses(HttpServletRequest request) {
+    public ResponseEntity<?> getUserDiagnoses(
+            HttpServletRequest request,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
         try {
             String authHeader = request.getHeader("Authorization");
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -85,8 +92,12 @@ public class DiagnosisController {
             User user = userRepository.findByPhone(phone)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            List<Diagnosis> diagnoses = diagnosisRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
-            return ResponseEntity.ok(diagnoses);
+            // Create Pageable with sorting (newest first)
+            Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+            Page<Diagnosis> diagnosesPage = diagnosisRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
+
+            return ResponseEntity.ok(diagnosesPage);
+
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Error fetching history: " + e.getMessage());
         }

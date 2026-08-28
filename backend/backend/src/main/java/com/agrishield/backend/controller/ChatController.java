@@ -7,10 +7,13 @@ import com.agrishield.backend.repository.UserRepository;
 import com.agrishield.backend.security.JwtUtil;
 import com.agrishield.backend.service.GeminiService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -58,8 +61,13 @@ public class ChatController {
         return answer;
     }
 
+    // ===== GET: /api/chat/history (With Pagination) =====
     @GetMapping("/history")
-    public ResponseEntity<?> getHistory(HttpServletRequest request) {
+    public ResponseEntity<?> getHistory(
+            HttpServletRequest request,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return ResponseEntity.status(401).body("Missing or invalid token");
@@ -71,8 +79,11 @@ public class ChatController {
             User user = userRepository.findByPhone(phone)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            List<ChatHistory> history = chatHistoryRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
-            return ResponseEntity.ok(history);
+            // Create Pageable with sorting (newest first)
+            Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+            Page<ChatHistory> historyPage = chatHistoryRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
+
+            return ResponseEntity.ok(historyPage);
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Error fetching history: " + e.getMessage());
         }
