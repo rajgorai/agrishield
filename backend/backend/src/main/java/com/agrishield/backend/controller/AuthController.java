@@ -1,12 +1,19 @@
 package com.agrishield.backend.controller;
 
+import com.agrishield.backend.entity.TokenBlacklist;
 import com.agrishield.backend.model.User;
+import com.agrishield.backend.repository.TokenBlacklistRepository;
 import com.agrishield.backend.repository.UserRepository;
 import com.agrishield.backend.security.JwtUtil;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -17,11 +24,16 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final TokenBlacklistRepository tokenBlacklistRepository;  // <-- NEW
 
-    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
+    public AuthController(UserRepository userRepository,
+                          PasswordEncoder passwordEncoder,
+                          JwtUtil jwtUtil,
+                          TokenBlacklistRepository tokenBlacklistRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
+        this.tokenBlacklistRepository = tokenBlacklistRepository;  // <-- NEW
     }
 
     @PostMapping("/register")
@@ -72,5 +84,30 @@ public class AuthController {
         response.put("phone", user.getPhone());
         response.put("name", user.getName());
         return ResponseEntity.ok(response);
+    }
+
+    // ===== NEW: LOGOUT ENDPOINT =====
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.badRequest().body("Missing or invalid token");
+        }
+
+        String token = authHeader.substring(7);
+
+        // Extract expiry date from token
+        Date expiration = jwtUtil.extractExpiration(token);
+        LocalDateTime expiryDate = expiration.toInstant()
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime();
+
+        // Save to blacklist
+        TokenBlacklist blacklistedToken = new TokenBlacklist();
+        blacklistedToken.setToken(token);
+        blacklistedToken.setExpiryDate(expiryDate);
+        tokenBlacklistRepository.save(blacklistedToken);
+
+        return ResponseEntity.ok("Logged out successfully");
     }
 }

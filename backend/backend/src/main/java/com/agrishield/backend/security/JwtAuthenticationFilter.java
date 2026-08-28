@@ -1,5 +1,6 @@
 package com.agrishield.backend.security;
 
+import com.agrishield.backend.repository.TokenBlacklistRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,17 +21,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
+    private final TokenBlacklistRepository tokenBlacklistRepository;
 
-    // Paths that should be publicly accessible without JWT
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/auth/",
             "/hello",
             "/api/chat/"
     );
 
-    public JwtAuthenticationFilter(JwtUtil jwtUtil, UserDetailsService userDetailsService) {
+    public JwtAuthenticationFilter(JwtUtil jwtUtil,
+                                   UserDetailsService userDetailsService,
+                                   TokenBlacklistRepository tokenBlacklistRepository) {
         this.jwtUtil = jwtUtil;
         this.userDetailsService = userDetailsService;
+        this.tokenBlacklistRepository = tokenBlacklistRepository;
     }
 
     @Override
@@ -39,13 +43,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // ===== DEBUG: Print every request that hits this filter =====
-        System.out.println("🔍 JwtAuthenticationFilter: Processing " + path);
-
-        // ===== SKIP JWT AUTH FOR PUBLIC PATHS =====
+        // Skip public paths
         for (String publicPath : PUBLIC_PATHS) {
             if (path.startsWith(publicPath)) {
-                System.out.println("✅ Skipping JWT auth for public path: " + path);
                 chain.doFilter(request, response);
                 return;
             }
@@ -60,19 +60,34 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             String jwt = authHeader.substring(7);
+            System.out.println("🔍 [JWT] Extracted Token: " + jwt.substring(0, Math.min(jwt.length(), 30)) + "...");
+
+            // Check blacklist
+            if (tokenBlacklistRepository.findByToken(jwt).isPresent()) {
+                System.out.println("❌ [JWT] Token is blacklisted!");
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.getWriter().write("Token has been logged out.");
+                return;
+            }
+
             String phone = jwtUtil.extractPhone(jwt);
+            System.out.println("📞 [JWT] Extracted Phone: " + phone);
 
             if (phone != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = this.userDetailsService.loadUserByUsername(phone);
                 if (jwtUtil.validateToken(jwt, phone)) {
+                    System.out.println("✅ [JWT] Token validated successfully for user: " + phone);
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
+                } else {
+                    System.out.println("❌ [JWT] Token validation FAILED for user: " + phone);
                 }
             }
         } catch (Exception e) {
-            // Invalid token - just continue
+            System.out.println("🔥 [JWT] EXCEPTION occurred: " + e.getMessage());
+            e.printStackTrace();
         }
 
         chain.doFilter(request, response);
