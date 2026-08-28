@@ -1,8 +1,11 @@
 package com.agrishield.backend.controller;
 
+import com.agrishield.backend.dto.DiseaseInfoDTO;
 import com.agrishield.backend.entity.Diagnosis;
+import com.agrishield.backend.entity.Disease;
 import com.agrishield.backend.model.User;
 import com.agrishield.backend.repository.DiagnosisRepository;
+import com.agrishield.backend.repository.DiseaseRepository;
 import com.agrishield.backend.repository.UserRepository;
 import com.agrishield.backend.security.JwtUtil;
 import com.agrishield.backend.service.DiagnosisService;
@@ -13,28 +16,33 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api") // <-- Base changed to /api
+@RequestMapping("/api")
 public class DiagnosisController {
 
     private final DiagnosisService diagnosisService;
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
     private final DiagnosisRepository diagnosisRepository;
+    private final DiseaseRepository diseaseRepository; // <-- ADDED
 
+    // ===== UPDATED CONSTRUCTOR =====
     public DiagnosisController(DiagnosisService diagnosisService,
                                JwtUtil jwtUtil,
                                UserRepository userRepository,
-                               DiagnosisRepository diagnosisRepository) {
+                               DiagnosisRepository diagnosisRepository,
+                               DiseaseRepository diseaseRepository) { // <-- ADDED
         this.diagnosisService = diagnosisService;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.diagnosisRepository = diagnosisRepository;
+        this.diseaseRepository = diseaseRepository; // <-- ADDED
     }
 
     // ===== POST: /api/diagnose =====
-    @PostMapping("/diagnose") // <-- Explicit mapping with 's'
+    @PostMapping("/diagnose")
     public ResponseEntity<?> diagnose(
             @RequestParam("image") MultipartFile image,
             @RequestParam(value = "language", defaultValue = "en") String language,
@@ -63,8 +71,8 @@ public class DiagnosisController {
         }
     }
 
-    // ===== GET: /api/diagnoses (with 's') =====
-    @GetMapping("/diagnoses") // <-- Explicit mapping with 's'
+    // ===== GET: /api/diagnoses (History) =====
+    @GetMapping("/diagnoses")
     public ResponseEntity<?> getUserDiagnoses(HttpServletRequest request) {
         try {
             String authHeader = request.getHeader("Authorization");
@@ -81,6 +89,27 @@ public class DiagnosisController {
             return ResponseEntity.ok(diagnoses);
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Error fetching history: " + e.getMessage());
+        }
+    }
+
+    // ===== GET: /api/diseases (Public Dropdown) =====
+    @GetMapping("/diseases")
+    public ResponseEntity<?> getAllDiseases() {
+        try {
+            List<Disease> diseases = diseaseRepository.findAll();
+            List<DiseaseInfoDTO> result = diseases.stream()
+                    .map(d -> new DiseaseInfoDTO(
+                            d.getModelClassLabel(),
+                            d.getCropName(),
+                            d.getDiseaseNameEn(),
+                            d.getDiseaseNameBn(),
+                            d.getDiseaseNameHi(),
+                            d.getSeverity()
+                    ))
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error fetching diseases: " + e.getMessage());
         }
     }
 }
