@@ -15,26 +15,29 @@ import java.util.UUID;
 @Service
 public class DiagnosisService {
 
+    // ===== ALL FIELDS (TOP) =====
     private final ImageStorageService imageStorageService;
     private final DiseaseRepository diseaseRepository;
     private final DiagnosisRepository diagnosisRepository;
     private final MLClientService mlClientService;
-    private final AudioService audioService;  // <-- NEW
+    private final AudioService audioService; // <-- Now at the top with others
 
+    // ===== CONSTRUCTOR (ALL 5 DEPENDENCIES) =====
     public DiagnosisService(ImageStorageService imageStorageService,
                             DiseaseRepository diseaseRepository,
                             DiagnosisRepository diagnosisRepository,
                             MLClientService mlClientService,
-                            AudioService audioService) {  // <-- NEW
+                            AudioService audioService) {
         this.imageStorageService = imageStorageService;
         this.diseaseRepository = diseaseRepository;
         this.diagnosisRepository = diagnosisRepository;
         this.mlClientService = mlClientService;
-        this.audioService = audioService;  // <-- NEW
+        this.audioService = audioService;
     }
 
+    // ===== MAIN DIAGNOSE METHOD =====
     public Map<String, Object> diagnose(MultipartFile image, UUID userId, String language) throws Exception {
-        // 1. Upload original image to MinIO
+        // 1. Upload image to MinIO
         String imageUrl = imageStorageService.uploadImage(image);
 
         // 2. Call Python AI service to get prediction
@@ -43,11 +46,20 @@ public class DiagnosisService {
         double confidence = prediction.getConfidence();
         int classIndex = prediction.getTopClassIndex();
 
+        // ===== NEW: CONFIDENCE THRESHOLD CHECK (SAFETY NET) =====
+        if (confidence < 0.60) {
+            Map<String, Object> lowConfidenceResponse = new HashMap<>();
+            lowConfidenceResponse.put("message", "Please upload a clear, close-up leaf photo.");
+            lowConfidenceResponse.put("confidence", confidence);
+            lowConfidenceResponse.put("suggestion", "The image quality is low or does not look like a diseased leaf.");
+            return lowConfidenceResponse;
+        }
+
         // 3. Find disease in database
         Disease disease = diseaseRepository.findByModelClassLabel(diseaseLabel)
                 .orElseThrow(() -> new RuntimeException("Disease not found: " + diseaseLabel));
 
-        // 4. Create and save diagnosis record (without heatmap and audio yet)
+        // 4. Create and save diagnosis record
         Diagnosis diagnosis = new Diagnosis();
         diagnosis.setUserId(userId);
         diagnosis.setDiseaseId(disease.getId());
@@ -64,7 +76,7 @@ public class DiagnosisService {
         String heatmapUrl = imageStorageService.uploadBase64Image(heatmapBase64, heatmapFileName);
         diagnosis.setHeatmapUrl(heatmapUrl);
 
-        // 6. Generate and upload audio advisory (NEW)
+        // 6. Generate and upload audio advisory
         String treatmentText = getTreatmentByLanguage(disease, language);
         String audioUrl = audioService.generateAndStoreAudio(treatmentText, language);
         diagnosis.setAudioUrl(audioUrl);
@@ -81,12 +93,13 @@ public class DiagnosisService {
         response.put("treatment", treatmentText);
         response.put("imageUrl", imageUrl);
         response.put("heatmapUrl", heatmapUrl);
-        response.put("audioUrl", audioUrl);  // <-- NEW FIELD
+        response.put("audioUrl", audioUrl);
         response.put("top3", prediction.getTop3());
 
         return response;
     }
 
+    // ===== LANGUAGE HELPERS =====
     private String getDiseaseNameByLanguage(Disease disease, String language) {
         switch (language.toLowerCase()) {
             case "bn": return disease.getDiseaseNameBn();
