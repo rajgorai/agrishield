@@ -30,15 +30,25 @@ public class ImageStorageService {
     }
 
     public String uploadImage(MultipartFile file) throws Exception {
-        String contentType = file.getContentType();
-        if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
-            throw new IllegalArgumentException("Only JPG and PNG images are allowed");
-        }
+        // ===== FILE TYPE VALIDATION TEMPORARILY DISABLED FOR TESTING =====
+        // String contentType = file.getContentType();
+        // if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
+        //     throw new IllegalArgumentException("Only JPG and PNG images are allowed");
+        // }
+        System.out.println("⚠️ File type validation bypassed. Uploading: " + file.getOriginalFilename());
+
+        // File size check (still enforced)
         if (file.getSize() > 10 * 1024 * 1024) {
             throw new IllegalArgumentException("File size exceeds 10MB limit");
         }
 
         String fileName = UUID.randomUUID().toString() + ".jpg";
+
+        // Get content type from file, fallback to "image/jpeg" if null
+        String contentType = file.getContentType();
+        if (contentType == null) {
+            contentType = "image/jpeg";
+        }
 
         minioClient.putObject(
                 PutObjectArgs.builder()
@@ -65,7 +75,7 @@ public class ImageStorageService {
         return "http://localhost:9000/" + bucketName + "/" + fileName;
     }
 
-    // -------- NEW: UPLOAD RAW BYTES (for audio) --------
+    // -------- UPLOAD RAW BYTES (for audio) --------
     public String uploadBytes(byte[] data, String fileName, String contentType) throws Exception {
         minioClient.putObject(
                 PutObjectArgs.builder()

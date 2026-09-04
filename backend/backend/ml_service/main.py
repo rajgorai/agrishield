@@ -18,7 +18,9 @@ class AudioRequest(BaseModel):
     language: str = "en"
 
 # ---------- LOAD MODEL ----------
-MODEL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'agrishield_model.h5')
+# ===== CHANGED: Load the new 88-class .keras model =====
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'agrishield_model_extended.keras')
+# ===== No change needed here – your class_names.json now has 88 classes =====
 CLASS_NAMES_PATH = os.path.join(os.path.dirname(__file__), 'models', 'class_names.json')
 
 with open(CLASS_NAMES_PATH, 'r') as f:
@@ -69,7 +71,7 @@ async def gradcam(file: UploadFile = File(...), class_index: int = 0):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# ===== VOICE ADVISORY ENDPOINT (NEW) =====
+# ===== VOICE ADVISORY ENDPOINT =====
 @app.post("/ml/audio")
 async def generate_audio(request: AudioRequest):
     try:

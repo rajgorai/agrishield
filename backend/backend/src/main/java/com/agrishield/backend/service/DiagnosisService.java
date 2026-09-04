@@ -20,9 +20,9 @@ public class DiagnosisService {
     private final DiseaseRepository diseaseRepository;
     private final DiagnosisRepository diagnosisRepository;
     private final MLClientService mlClientService;
-    private final AudioService audioService; // <-- Now at the top with others
+    private final AudioService audioService;
 
-    // ===== CONSTRUCTOR (ALL 5 DEPENDENCIES) =====
+    // ===== CONSTRUCTOR =====
     public DiagnosisService(ImageStorageService imageStorageService,
                             DiseaseRepository diseaseRepository,
                             DiagnosisRepository diagnosisRepository,
@@ -46,7 +46,7 @@ public class DiagnosisService {
         double confidence = prediction.getConfidence();
         int classIndex = prediction.getTopClassIndex();
 
-        // ===== NEW: CONFIDENCE THRESHOLD CHECK (SAFETY NET) =====
+        // ===== CONFIDENCE THRESHOLD CHECK (SAFETY NET) =====
         if (confidence < 0.60) {
             Map<String, Object> lowConfidenceResponse = new HashMap<>();
             lowConfidenceResponse.put("message", "Please upload a clear, close-up leaf photo.");
@@ -70,10 +70,16 @@ public class DiagnosisService {
 
         diagnosisRepository.save(diagnosis);
 
-        // 5. Generate and upload Grad-CAM heatmap
+        // ===== 5. Grad-CAM heatmap (PERMANENTLY DISABLED) =====
+        // The new .keras model (88 classes) has a different internal structure
+        // that breaks the gradcam.py function. We skip heatmap generation for now.
+        /*
         String heatmapBase64 = mlClientService.getGradCam(image, classIndex);
         String heatmapFileName = "heatmap-" + diagnosis.getId() + ".png";
         String heatmapUrl = imageStorageService.uploadBase64Image(heatmapBase64, heatmapFileName);
+        diagnosis.setHeatmapUrl(heatmapUrl);
+        */
+        String heatmapUrl = null;
         diagnosis.setHeatmapUrl(heatmapUrl);
 
         // 6. Generate and upload audio advisory
@@ -92,7 +98,7 @@ public class DiagnosisService {
         response.put("confidence", confidence);
         response.put("treatment", treatmentText);
         response.put("imageUrl", imageUrl);
-        response.put("heatmapUrl", heatmapUrl);
+        response.put("heatmapUrl", heatmapUrl);  // Will be null
         response.put("audioUrl", audioUrl);
         response.put("top3", prediction.getTop3());
 
