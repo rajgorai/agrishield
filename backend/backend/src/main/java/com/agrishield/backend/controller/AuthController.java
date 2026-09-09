@@ -17,6 +17,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+@CrossOrigin(origins = "http://localhost:5173")
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -24,7 +25,7 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
-    private final TokenBlacklistRepository tokenBlacklistRepository;  // <-- NEW
+    private final TokenBlacklistRepository tokenBlacklistRepository;
 
     public AuthController(UserRepository userRepository,
                           PasswordEncoder passwordEncoder,
@@ -33,7 +34,7 @@ public class AuthController {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
-        this.tokenBlacklistRepository = tokenBlacklistRepository;  // <-- NEW
+        this.tokenBlacklistRepository = tokenBlacklistRepository;
     }
 
     @PostMapping("/register")
@@ -86,7 +87,6 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    // ===== NEW: LOGOUT ENDPOINT =====
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest request) {
         String authHeader = request.getHeader("Authorization");
@@ -96,13 +96,11 @@ public class AuthController {
 
         String token = authHeader.substring(7);
 
-        // Extract expiry date from token
         Date expiration = jwtUtil.extractExpiration(token);
         LocalDateTime expiryDate = expiration.toInstant()
                 .atZone(ZoneId.systemDefault())
                 .toLocalDateTime();
 
-        // Save to blacklist
         TokenBlacklist blacklistedToken = new TokenBlacklist();
         blacklistedToken.setToken(token);
         blacklistedToken.setExpiryDate(expiryDate);
