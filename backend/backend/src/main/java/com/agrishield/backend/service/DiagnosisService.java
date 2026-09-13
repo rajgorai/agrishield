@@ -35,8 +35,16 @@ public class DiagnosisService {
         this.audioService = audioService;
     }
 
-    // ===== MAIN DIAGNOSE METHOD =====
-    public Map<String, Object> diagnose(MultipartFile image, UUID userId, String language) throws Exception {
+    // ===== MAIN DIAGNOSE METHOD (NOW ACCEPTS MODEL PARAMETER) =====
+    public Map<String, Object> diagnose(MultipartFile image, UUID userId, String language, String model) throws Exception {
+
+        // 0. Switch Python model if R or J is specified
+        if (model != null && (model.equalsIgnoreCase("R") || model.equalsIgnoreCase("J"))) {
+            mlClientService.switchModel(model.toUpperCase());
+        } else {
+            model = "J"; // Default
+        }
+
         // 1. Upload image to MinIO
         String imageUrl = imageStorageService.uploadImage(image);
 
@@ -70,17 +78,21 @@ public class DiagnosisService {
 
         diagnosisRepository.save(diagnosis);
 
-        // ===== 5. Grad-CAM heatmap (PERMANENTLY DISABLED) =====
-        // The new .keras model (88 classes) has a different internal structure
-        // that breaks the gradcam.py function. We skip heatmap generation for now.
-        /*
-        String heatmapBase64 = mlClientService.getGradCam(image, classIndex);
-        String heatmapFileName = "heatmap-" + diagnosis.getId() + ".png";
-        String heatmapUrl = imageStorageService.uploadBase64Image(heatmapBase64, heatmapFileName);
-        diagnosis.setHeatmapUrl(heatmapUrl);
-        */
+        // ===== 5. Grad-CAM heatmap (ONLY WORKS WHEN MODEL = R) =====
         String heatmapUrl = null;
-        diagnosis.setHeatmapUrl(heatmapUrl);
+        if (model.equalsIgnoreCase("R")) {
+            try {
+                String heatmapBase64 = mlClientService.getGradCam(image, classIndex);
+                String heatmapFileName = "heatmap-" + diagnosis.getId() + ".png";
+                heatmapUrl = imageStorageService.uploadBase64Image(heatmapBase64, heatmapFileName);
+                diagnosis.setHeatmapUrl(heatmapUrl);
+                System.out.println("✅ Grad-CAM generated successfully.");
+            } catch (Exception e) {
+                System.out.println("⚠️ Grad-CAM failed: " + e.getMessage());
+            }
+        } else {
+            System.out.println("ℹ️ Grad-CAM skipped (Model J does not support it).");
+        }
 
         // 6. Generate and upload audio advisory
         String treatmentText = getTreatmentByLanguage(disease, language);
@@ -98,9 +110,10 @@ public class DiagnosisService {
         response.put("confidence", confidence);
         response.put("treatment", treatmentText);
         response.put("imageUrl", imageUrl);
-        response.put("heatmapUrl", heatmapUrl);  // Will be null
+        response.put("heatmapUrl", heatmapUrl);   // null when Model J
         response.put("audioUrl", audioUrl);
         response.put("top3", prediction.getTop3());
+        response.put("modelUsed", model.toUpperCase());   // NEW field
 
         return response;
     }

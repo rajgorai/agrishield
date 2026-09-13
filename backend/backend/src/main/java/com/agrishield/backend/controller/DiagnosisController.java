@@ -9,6 +9,7 @@ import com.agrishield.backend.repository.DiseaseRepository;
 import com.agrishield.backend.repository.UserRepository;
 import com.agrishield.backend.security.JwtUtil;
 import com.agrishield.backend.service.DiagnosisService;
+import com.agrishield.backend.service.MLClientService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@CrossOrigin(origins = "http://localhost:5173")
 @RestController
 @RequestMapping("/api")
 public class DiagnosisController {
@@ -31,24 +33,28 @@ public class DiagnosisController {
     private final UserRepository userRepository;
     private final DiagnosisRepository diagnosisRepository;
     private final DiseaseRepository diseaseRepository;
+    private final MLClientService mlClientService;   // <-- NEW
 
     public DiagnosisController(DiagnosisService diagnosisService,
                                JwtUtil jwtUtil,
                                UserRepository userRepository,
                                DiagnosisRepository diagnosisRepository,
-                               DiseaseRepository diseaseRepository) {
+                               DiseaseRepository diseaseRepository,
+                               MLClientService mlClientService) {   // <-- NEW
         this.diagnosisService = diagnosisService;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.diagnosisRepository = diagnosisRepository;
         this.diseaseRepository = diseaseRepository;
+        this.mlClientService = mlClientService;   // <-- NEW
     }
 
-    // ===== POST: /api/diagnose =====
+    // ===== POST: /api/diagnose (now with model parameter) =====
     @PostMapping("/diagnose")
     public ResponseEntity<?> diagnose(
             @RequestParam("image") MultipartFile image,
             @RequestParam(value = "language", defaultValue = "en") String language,
+            @RequestParam(value = "model", defaultValue = "J") String model,
             HttpServletRequest request) {
 
         try {
@@ -63,7 +69,7 @@ public class DiagnosisController {
             User user = userRepository.findByPhone(phone)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            Map<String, Object> result = diagnosisService.diagnose(image, user.getId(), language);
+            Map<String, Object> result = diagnosisService.diagnose(image, user.getId(), language, model);
             return ResponseEntity.ok(result);
 
         } catch (IllegalArgumentException e) {
@@ -92,7 +98,6 @@ public class DiagnosisController {
             User user = userRepository.findByPhone(phone)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            // Create Pageable with sorting (newest first)
             Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
             Page<Diagnosis> diagnosesPage = diagnosisRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
 
@@ -121,6 +126,20 @@ public class DiagnosisController {
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Error fetching diseases: " + e.getMessage());
+        }
+    }
+
+    // ===== POST: /api/switch-model (NEW) =====
+    @PostMapping("/switch-model")
+    public ResponseEntity<?> switchModel(@RequestParam("model") String model) {
+        try {
+            if (!model.equalsIgnoreCase("R") && !model.equalsIgnoreCase("J")) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Model must be R or J"));
+            }
+            mlClientService.switchModel(model.toUpperCase());
+            return ResponseEntity.ok(Map.of("status", "switched", "activeModel", model.toUpperCase()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }
 }

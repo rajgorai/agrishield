@@ -52,7 +52,7 @@ public class MLClientService {
         }
     }
 
-    // -------- GRAD-CAM ENDPOINT (NEW) --------
+    // -------- GRAD-CAM ENDPOINT --------
     public String getGradCam(MultipartFile image, int classIndex) throws IOException {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", new MultipartFileResource(image));
@@ -77,6 +77,16 @@ public class MLClientService {
             throw new RuntimeException("Grad-CAM response missing 'heatmap_base64'");
         } catch (Exception e) {
             throw new IOException("Failed to call Grad-CAM service: " + e.getMessage(), e);
+        }
+    }
+
+    // -------- SWITCH MODEL ENDPOINT (NEW) --------
+    public void switchModel(String model) throws IOException {
+        try {
+            String url = mlServiceUrl + "/ml/switch-model?model=" + model;
+            restTemplate.postForObject(url, null, Map.class);
+        } catch (Exception e) {
+            throw new IOException("Failed to switch model: " + e.getMessage(), e);
         }
     }
 
