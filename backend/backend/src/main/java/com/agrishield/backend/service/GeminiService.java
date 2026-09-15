@@ -118,7 +118,6 @@ public class GeminiService {
         modelsToTry.add(activeModelName);                 // First try the detected model
         modelsToTry.add("gemini-3.6-flash");              // Fallback 1
         modelsToTry.add("gemini-3.5-flash");              // Fallback 2
-        // You can add more if needed, e.g., "gemini-3.7-flash", "gemini-3.1-flash"
 
         for (String model : modelsToTry) {
             try {
@@ -169,5 +168,78 @@ public class GeminiService {
 
         // If all models fail
         return "I'm having trouble connecting to the AI right now. All models are currently unavailable. Please try again later.";
+    }
+
+    // ===== MULTIMODAL: Text + Image =====
+    public String askWithImage(String question, byte[] imageBytes, String mimeType) {
+        List<String> modelsToTry = new ArrayList<>();
+        modelsToTry.add(activeModelName);
+        modelsToTry.add("gemini-2.5-flash");
+        modelsToTry.add("gemini-3.5-flash");
+
+        for (String model : modelsToTry) {
+            try {
+                String apiUrl = "https://generativelanguage.googleapis.com/v1/models/"
+                        + model + ":generateContent?key=" + apiKey;
+
+                // Build parts array: [text, image]
+                List<Map<String, Object>> parts = new ArrayList<>();
+
+                String prompt = (question == null || question.trim().isEmpty())
+                        ? "Please analyze this crop leaf image. Identify the crop, any disease you see, severity, and recommend a treatment. Be concise and practical."
+                        : question;
+
+                parts.add(Map.of("text", prompt));
+
+                // Encode image as base64
+                String base64Image = Base64.getEncoder().encodeToString(imageBytes);
+
+                Map<String, Object> inlineData = new HashMap<>();
+                inlineData.put("mime_type",
+                        (mimeType != null && mimeType.startsWith("image/")) ? mimeType : "image/jpeg");
+                inlineData.put("data", base64Image);
+
+                Map<String, Object> imagePart = new HashMap<>();
+                imagePart.put("inline_data", inlineData);
+                parts.add(imagePart);
+
+                // Wrap in contents
+                Map<String, Object> contents = new HashMap<>();
+                contents.put("parts", parts);
+
+                Map<String, Object> requestBody = new HashMap<>();
+                requestBody.put("contents", List.of(contents));
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+
+                HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+
+                ResponseEntity<Map> response = restTemplate.exchange(
+                        apiUrl,
+                        HttpMethod.POST,
+                        requestEntity,
+                        Map.class
+                );
+
+                Map<String, Object> responseBody = response.getBody();
+                if (responseBody != null && responseBody.containsKey("candidates")) {
+                    List<Map<String, Object>> candidates = (List<Map<String, Object>>) responseBody.get("candidates");
+                    if (!candidates.isEmpty()) {
+                        Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
+                        List<Map<String, Object>> respParts = (List<Map<String, Object>>) content.get("parts");
+                        if (!respParts.isEmpty()) {
+                            return (String) respParts.get(0).get("text");
+                        }
+                    }
+                }
+
+                System.out.println("⚠️ [Gemini Vision] Model " + model + " returned empty response. Trying next.");
+            } catch (Exception e) {
+                System.out.println("⚠️ [Gemini Vision] Model " + model + " failed: " + e.getMessage());
+            }
+        }
+
+        return "I could not analyze this image right now. Please try again.";
     }
 }

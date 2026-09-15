@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
@@ -59,6 +60,45 @@ public class ChatController {
         }
 
         return answer;
+    }
+
+    // ===== NEW: Text + Image (Gemini Vision) =====
+    @PostMapping("/ask-with-image")
+    public ResponseEntity<?> askWithImage(
+            @RequestParam("image") MultipartFile image,
+            @RequestParam(value = "question", defaultValue = "") String question,
+            HttpServletRequest request) {
+        try {
+            String answer = geminiService.askWithImage(
+                    question,
+                    image.getBytes(),
+                    image.getContentType()
+            );
+
+            // Save chat history (extract user from JWT if present)
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                try {
+                    String token = authHeader.substring(7);
+                    String phone = jwtUtil.extractPhone(token);
+                    User user = userRepository.findByPhone(phone).orElse(null);
+                    if (user != null) {
+                        ChatHistory chat = new ChatHistory();
+                        chat.setUserId(user.getId());
+                        chat.setQuestion(question.isEmpty() ? "[Image analysis]" : question + " [with image]");
+                        chat.setAnswer(answer);
+                        chatHistoryRepository.save(chat);
+                    }
+                } catch (Exception e) {
+                    // Don't save if token is invalid
+                }
+            }
+
+            return ResponseEntity.ok(Map.of("answer", answer));
+        } catch (Exception e) {
+            System.out.println("❌ [ChatController] askWithImage failed: " + e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 
     // ===== GET: /api/chat/history (With Pagination) =====

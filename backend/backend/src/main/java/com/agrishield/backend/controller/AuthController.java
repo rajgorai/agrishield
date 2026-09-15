@@ -55,7 +55,8 @@ public class AuthController {
         user.setName(name);
         user.setPhone(phone);
         user.setPasswordHash(passwordEncoder.encode(password));
-        user.setPreferredLanguage("en");
+        String language = request.get("language");
+        user.setPreferredLanguage(language != null && !language.isEmpty() ? language : "en");
 
         userRepository.save(user);
 

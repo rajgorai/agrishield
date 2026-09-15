@@ -1,0 +1,41 @@
+# ============ JAVA / MAVEN ============
+backend/backend/target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ============ IDE ============
+**/.idea/
+**/*.iml
+**/.vscode/
+**/.settings/
+**/.classpath
+**/.project
+
+# ============ NODE / VITE ============
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+npm-debug.log*
+yarn-error.log*
+
+# ============ PYTHON ============
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+**/*.egg-info/
+
+# ============ SECRETS ============
+**/application-secrets.properties
+**/*.env
+**/.env.local
+**/.env.production
+
+# ============ OS ============
+.DS_Store
+Thumbs.db
+
+# ============ LOGS ============
+*.log
