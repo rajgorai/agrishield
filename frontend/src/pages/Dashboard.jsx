@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import ThemeToggle from '../components/ThemeToggle'
 import LanguageSelector from '../components/LanguageSelector'
+import CameraCapture from '../components/CameraCapture'
 import useTranslation from '../hooks/useTranslation'
 import { useLanguage } from '../contexts/LanguageContext'
 
@@ -18,6 +19,7 @@ const Dashboard = () => {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [cameraOpen, setCameraOpen] = useState(false)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -42,6 +44,7 @@ const Dashboard = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     localStorage.removeItem('language')
+    sessionStorage.removeItem('chat_messages')
     window.location.href = '/'
   }
 
@@ -69,6 +72,10 @@ const Dashboard = () => {
     if (file) validateAndSetFile(file)
   }
 
+  const handleCapturedImage = (file) => {
+    validateAndSetFile(file)
+  }
+
   const handleDrop = (e) => {
     e.preventDefault()
     const file = e.dataTransfer.files[0]
@@ -94,7 +101,7 @@ const Dashboard = () => {
     const token = localStorage.getItem('token')
 
     try {
-      const res = await axios.post('http://localhost:8080/api/diagnose', formData, {
+      const res = await axios.post(`${import.meta.env.VITE_API_BASE}/api/diagnose`, formData, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data',
@@ -186,7 +193,6 @@ const Dashboard = () => {
 
           {/* RIGHT */}
           <div className="flex items-center gap-2 sm:gap-4">
-            {/* Chat */}
             <button
               onClick={() => navigate('/chat')}
               className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg
@@ -201,7 +207,6 @@ const Dashboard = () => {
               Chat
             </button>
 
-            {/* History */}
             <button
               onClick={() => navigate('/history')}
               className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg
@@ -420,13 +425,11 @@ const Dashboard = () => {
           <div
             onDrop={handleDrop}
             onDragOver={handleDragOver}
-            onClick={triggerFileInput}
-            className="cursor-pointer rounded-2xl border-2 border-dashed
-                       border-brand-light/60 hover:border-brand-mid
+            className="rounded-2xl border-2 border-dashed
+                       border-brand-light/60
                        bg-brand-pale/40 dark:bg-brand-dark/20
-                       hover:bg-brand-pale dark:hover:bg-brand-dark/40
                        transition-colors duration-200
-                       p-8 text-center"
+                       p-6 text-center"
           >
             {preview ? (
               <div>
@@ -437,31 +440,61 @@ const Dashboard = () => {
                 </p>
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setSelectedFile(null) }}
+                  onClick={() => setSelectedFile(null)}
                   className="mt-3 text-sm text-red-600 hover:underline font-medium"
                 >
                   {t.removePhoto}
                 </button>
               </div>
             ) : (
-              <div className="py-6">
-                <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-brand-mid/10
+              <div className="py-4">
+                <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-brand-mid/10
                                 flex items-center justify-center">
-                  <svg className="w-8 h-8 text-brand-mid" fill="none" stroke="currentColor"
+                  <svg className="w-7 h-7 text-brand-mid" fill="none" stroke="currentColor"
                        strokeWidth="1.8" viewBox="0 0 24 24">
                     <path d="M3 9a2 2 0 0 1 2-2h1.5l1-2h9l1 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                     <circle cx="12" cy="13" r="3.5" />
                   </svg>
                 </div>
-                <p className="text-base font-medium text-text-primary dark:text-text-dark-primary">
+                <p className="text-base font-medium text-text-primary dark:text-text-dark-primary mb-1">
                   {t.tapToChoose}
                 </p>
-                <p className="text-sm text-text-muted dark:text-text-dark-muted mt-1">
-                  {t.dragDrop}
-                </p>
-                <p className="text-xs text-text-muted dark:text-text-dark-muted mt-2">
+                <p className="text-xs text-text-muted dark:text-text-dark-muted mb-4">
                   {t.fileFormats}
                 </p>
+
+                <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                  <button
+                    type="button"
+                    onClick={triggerFileInput}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5
+                               rounded-lg bg-brand-mid text-white text-sm font-semibold
+                               hover:bg-brand-light transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor"
+                         strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                            strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Choose Photo
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCameraOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5
+                               rounded-lg border border-brand-mid text-brand-mid text-sm font-semibold
+                               hover:bg-brand-pale dark:hover:bg-brand-dark
+                               transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor"
+                         strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M3 9a2 2 0 0 1 2-2h1.5l1-2h9l1 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <circle cx="12" cy="13" r="3.5" />
+                    </svg>
+                    Take Photo
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -523,6 +556,14 @@ const Dashboard = () => {
           </p>
         </div>
       </main>
+
+      {/* ===== CAMERA MODAL ===== */}
+      {cameraOpen && (
+        <CameraCapture
+          onCapture={handleCapturedImage}
+          onClose={() => setCameraOpen(false)}
+        />
+      )}
     </div>
   )
 }

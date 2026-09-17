@@ -111,22 +111,41 @@ public class GeminiService {
         }
     }
 
-    // ===== UPDATED: askQuestion with Fallback Logic =====
-    public String askQuestion(String question) {
+    // ===== UPDATED: askQuestion accepts conversation history =====
+    public String askQuestion(String question, List<Map<String, String>> history) {
         // List of models to try: current active, then known working fallbacks
         List<String> modelsToTry = new ArrayList<>();
-        modelsToTry.add(activeModelName);                 // First try the detected model
-        modelsToTry.add("gemini-3.6-flash");              // Fallback 1
-        modelsToTry.add("gemini-3.5-flash");              // Fallback 2
+        modelsToTry.add(activeModelName);
+        modelsToTry.add("gemini-3.6-flash");
+        modelsToTry.add("gemini-3.5-flash");
 
         for (String model : modelsToTry) {
             try {
                 String apiUrl = "https://generativelanguage.googleapis.com/v1/models/" + model + ":generateContent";
 
+                // Build contents array: history + current question
+                List<Map<String, Object>> contents = new ArrayList<>();
+
+                if (history != null) {
+                    for (Map<String, String> msg : history) {
+                        String role = "user".equals(msg.get("role")) ? "user" : "model";
+                        String text = msg.get("text");
+                        if (text == null || text.trim().isEmpty()) continue;
+                        contents.add(Map.of(
+                                "role", role,
+                                "parts", List.of(Map.of("text", text))
+                        ));
+                    }
+                }
+
+                // Add current question
+                contents.add(Map.of(
+                        "role", "user",
+                        "parts", List.of(Map.of("text", question))
+                ));
+
                 Map<String, Object> requestBody = new HashMap<>();
-                Map<String, Object> contents = new HashMap<>();
-                contents.put("parts", List.of(Map.of("text", question)));
-                requestBody.put("contents", List.of(contents));
+                requestBody.put("contents", contents);
 
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_JSON);
@@ -158,15 +177,12 @@ public class GeminiService {
                         }
                     }
                 }
-                // If we got a response but no content, treat as failure and try next model
                 System.out.println("⚠️ [Gemini] Model " + model + " returned empty response. Trying next fallback.");
             } catch (Exception e) {
                 System.out.println("⚠️ [Gemini] Model " + model + " failed with error: " + e.getMessage() + ". Trying next.");
-                // Continue to next model
             }
         }
 
-        // If all models fail
         return "I'm having trouble connecting to the AI right now. All models are currently unavailable. Please try again later.";
     }
 

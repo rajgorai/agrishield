@@ -28,8 +28,8 @@ public class MLClientService {
         this.objectMapper = new ObjectMapper();
     }
 
-    // -------- PREDICT ENDPOINT --------
-    public MLPrediction predict(MultipartFile image) throws IOException {
+    // -------- PREDICT (model passed per request) --------
+    public MLPrediction predict(MultipartFile image, String model) throws IOException {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", new MultipartFileResource(image));
 
@@ -37,7 +37,8 @@ public class MLClientService {
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-        String url = mlServiceUrl + "/ml/predict";
+
+        String url = mlServiceUrl + "/ml/predict?model=" + model.toUpperCase();
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(
@@ -52,8 +53,8 @@ public class MLClientService {
         }
     }
 
-    // -------- GRAD-CAM ENDPOINT --------
-    public String getGradCam(MultipartFile image, int classIndex) throws IOException {
+    // -------- GRAD-CAM (model passed per request) --------
+    public String getGradCam(MultipartFile image, int classIndex, String model) throws IOException {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", new MultipartFileResource(image));
         body.add("class_index", String.valueOf(classIndex));
@@ -62,7 +63,7 @@ public class MLClientService {
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-        String url = mlServiceUrl + "/ml/gradcam";
+        String url = mlServiceUrl + "/ml/gradcam?model=" + model.toUpperCase();
 
         try {
             ResponseEntity<Map> response = restTemplate.exchange(
@@ -80,15 +81,7 @@ public class MLClientService {
         }
     }
 
-    // -------- SWITCH MODEL ENDPOINT (NEW) --------
-    public void switchModel(String model) throws IOException {
-        try {
-            String url = mlServiceUrl + "/ml/switch-model?model=" + model;
-            restTemplate.postForObject(url, null, Map.class);
-        } catch (Exception e) {
-            throw new IOException("Failed to switch model: " + e.getMessage(), e);
-        }
-    }
+    // switchModel() REMOVED — no longer needed (per-request model now)
 
     // Helper class to convert MultipartFile to ByteArrayResource
     private static class MultipartFileResource extends ByteArrayResource {

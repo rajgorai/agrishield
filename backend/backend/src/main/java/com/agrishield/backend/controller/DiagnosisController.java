@@ -10,12 +10,13 @@ import com.agrishield.backend.repository.DiseaseRepository;
 import com.agrishield.backend.repository.UserRepository;
 import com.agrishield.backend.security.JwtUtil;
 import com.agrishield.backend.service.DiagnosisService;
-import com.agrishield.backend.service.MLClientService;
+import com.agrishield.backend.service.ImageStorageService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -25,7 +26,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-@CrossOrigin(origins = "http://localhost:5173")
 @RestController
 @RequestMapping("/api")
 public class DiagnosisController {
@@ -35,20 +35,20 @@ public class DiagnosisController {
     private final UserRepository userRepository;
     private final DiagnosisRepository diagnosisRepository;
     private final DiseaseRepository diseaseRepository;
-    private final MLClientService mlClientService;
+    private final ImageStorageService imageStorageService;
 
     public DiagnosisController(DiagnosisService diagnosisService,
                                JwtUtil jwtUtil,
                                UserRepository userRepository,
                                DiagnosisRepository diagnosisRepository,
                                DiseaseRepository diseaseRepository,
-                               MLClientService mlClientService) {
+                               ImageStorageService imageStorageService) {
         this.diagnosisService = diagnosisService;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.diagnosisRepository = diagnosisRepository;
         this.diseaseRepository = diseaseRepository;
-        this.mlClientService = mlClientService;
+        this.imageStorageService = imageStorageService;
     }
 
     // ===== POST: /api/diagnose (upload) =====
@@ -112,7 +112,7 @@ public class DiagnosisController {
         }
     }
 
-    // ===== GET: /api/diagnoses/{id} (single — full detail for Result page) =====
+    // ===== GET: /api/diagnoses/{id} (single — full detail) =====
     @GetMapping("/diagnoses/{id}")
     public ResponseEntity<?> getDiagnosisById(
             @PathVariable String id,
@@ -140,7 +140,6 @@ public class DiagnosisController {
             Disease disease = diseaseRepository.findById(d.getDiseaseId())
                     .orElseThrow(() -> new RuntimeException("Disease not found"));
 
-            // Use the saved language or the request language as fallback
             String lang = d.getLanguageUsed() != null ? d.getLanguageUsed() : language;
 
             String diseaseName, treatment;
@@ -181,6 +180,131 @@ public class DiagnosisController {
         }
     }
 
+    // ===== DELETE: /api/diagnoses/{id} (single) =====
+    @DeleteMapping("/diagnoses/{id}")
+    @Transactional
+    public ResponseEntity<?> deleteDiagnosis(
+            @PathVariable String id,
+            HttpServletRequest request) {
+        try {
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(401).body(Map.of("error", "Missing token"));
+            }
+
+            String token = authHeader.substring(7);
+            String phone = jwtUtil.extractPhone(token);
+            User user = userRepository.findByPhone(phone)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            Diagnosis d = diagnosisRepository.findById(UUID.fromString(id))
+                    .orElseThrow(() -> new RuntimeException("Diagnosis not found"));
+
+            if (!d.getUserId().equals(user.getId())) {
+                return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
+            }
+
+            // Delete files from MinIO first
+            imageStorageService.deleteFile(d.getImageUrl());
+            imageStorageService.deleteFile(d.getHeatmapUrl());
+            imageStorageService.deleteFile(d.getAudioUrl());
+
+            diagnosisRepository.delete(d);
+            System.out.println("🗑️ Deleted diagnosis " + id + " for user " + user.getId());
+
+            return ResponseEntity.ok(Map.of("deleted", 1));
+
+        } catch (Exception e) {
+            System.out.println("❌ [Delete] " + e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ===== DELETE: /api/diagnoses (all for user) =====
+    @DeleteMapping("/diagnoses")
+    @Transactional
+    public ResponseEntity<?> deleteAllDiagnoses(HttpServletRequest request) {
+        try {
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(401).body(Map.of("error", "Missing token"));
+            }
+
+            String token = authHeader.substring(7);
+            String phone = jwtUtil.extractPhone(token);
+            User user = userRepository.findByPhone(phone)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            List<Diagnosis> all = diagnosisRepository.findAll()
+                    .stream()
+                    .filter(d -> d.getUserId().equals(user.getId()))
+                    .collect(Collectors.toList());
+
+            for (Diagnosis d : all) {
+                imageStorageService.deleteFile(d.getImageUrl());
+                imageStorageService.deleteFile(d.getHeatmapUrl());
+                imageStorageService.deleteFile(d.getAudioUrl());
+            }
+            diagnosisRepository.deleteAll(all);
+
+            System.out.println("🗑️ Deleted ALL " + all.size() + " diagnoses for user " + user.getId());
+            return ResponseEntity.ok(Map.of("deleted", all.size()));
+
+        } catch (Exception e) {
+            System.out.println("❌ [Delete all] " + e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ===== POST: /api/diagnoses/bulk-delete (selected IDs) =====
+    @PostMapping("/diagnoses/bulk-delete")
+    @Transactional
+    public ResponseEntity<?> bulkDeleteDiagnoses(
+            @RequestBody Map<String, List<String>> payload,
+            HttpServletRequest request) {
+        try {
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(401).body(Map.of("error", "Missing token"));
+            }
+
+            String token = authHeader.substring(7);
+            String phone = jwtUtil.extractPhone(token);
+            User user = userRepository.findByPhone(phone)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            List<String> rawIds = payload.get("ids");
+            if (rawIds == null || rawIds.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "No IDs provided"));
+            }
+
+            int deleted = 0;
+            for (String raw : rawIds) {
+                try {
+                    UUID uuid = UUID.fromString(raw);
+                    Diagnosis d = diagnosisRepository.findById(uuid).orElse(null);
+                    if (d == null) continue;
+                    if (!d.getUserId().equals(user.getId())) continue;
+
+                    imageStorageService.deleteFile(d.getImageUrl());
+                    imageStorageService.deleteFile(d.getHeatmapUrl());
+                    imageStorageService.deleteFile(d.getAudioUrl());
+                    diagnosisRepository.delete(d);
+                    deleted++;
+                } catch (Exception ignored) {
+                    // skip individual failures
+                }
+            }
+
+            System.out.println("🗑️ Bulk deleted " + deleted + " diagnoses for user " + user.getId());
+            return ResponseEntity.ok(Map.of("deleted", deleted));
+
+        } catch (Exception e) {
+            System.out.println("❌ [Bulk delete] " + e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     // ===== GET: /api/diseases (Public Dropdown) =====
     @GetMapping("/diseases")
     public ResponseEntity<?> getAllDiseases() {
@@ -199,20 +323,6 @@ public class DiagnosisController {
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Error fetching diseases: " + e.getMessage());
-        }
-    }
-
-    // ===== POST: /api/switch-model =====
-    @PostMapping("/switch-model")
-    public ResponseEntity<?> switchModel(@RequestParam("model") String model) {
-        try {
-            if (!model.equalsIgnoreCase("R") && !model.equalsIgnoreCase("J")) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Model must be R or J"));
-            }
-            mlClientService.switchModel(model.toUpperCase());
-            return ResponseEntity.ok(Map.of("status", "switched", "activeModel", model.toUpperCase()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }
 }

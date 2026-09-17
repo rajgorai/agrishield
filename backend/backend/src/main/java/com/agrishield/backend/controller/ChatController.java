@@ -15,6 +15,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -36,33 +39,64 @@ public class ChatController {
         this.jwtUtil = jwtUtil;
     }
 
-    @GetMapping("/ask")
-    public String askQuestion(@RequestParam String question, HttpServletRequest request) {
-        String answer = geminiService.askQuestion(question);
+    // ===== POST: /api/chat/ask (Text only, with conversation history) =====
+    @PostMapping("/ask")
+    public ResponseEntity<?> askQuestion(
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request) {
 
-        // Save chat history (extract user from JWT if present)
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            try {
-                String token = authHeader.substring(7);
-                String phone = jwtUtil.extractPhone(token);
-                User user = userRepository.findByPhone(phone).orElse(null);
-                if (user != null) {
-                    ChatHistory chat = new ChatHistory();
-                    chat.setUserId(user.getId());
-                    chat.setQuestion(question);
-                    chat.setAnswer(answer);
-                    chatHistoryRepository.save(chat);
-                }
-            } catch (Exception e) {
-                // Don't save if token is invalid
+        try {
+            String question = (String) payload.get("question");
+            if (question == null || question.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Question is required"));
             }
-        }
 
-        return answer;
+            // Extract history (list of {role, text})
+            List<Map<String, String>> history = new ArrayList<>();
+            Object historyObj = payload.get("history");
+            if (historyObj instanceof List) {
+                for (Object item : (List<?>) historyObj) {
+                    if (item instanceof Map) {
+                        Map<?, ?> m = (Map<?, ?>) item;
+                        String role = m.get("role") != null ? m.get("role").toString() : "user";
+                        String text = m.get("text") != null ? m.get("text").toString() : "";
+                        Map<String, String> entry = new HashMap<>();
+                        entry.put("role", role);
+                        entry.put("text", text);
+                        history.add(entry);
+                    }
+                }
+            }
+
+            String answer = geminiService.askQuestion(question, history);
+
+            // Save chat history (extract user from JWT if present)
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                try {
+                    String token = authHeader.substring(7);
+                    String phone = jwtUtil.extractPhone(token);
+                    User user = userRepository.findByPhone(phone).orElse(null);
+                    if (user != null) {
+                        ChatHistory chat = new ChatHistory();
+                        chat.setUserId(user.getId());
+                        chat.setQuestion(question);
+                        chat.setAnswer(answer);
+                        chatHistoryRepository.save(chat);
+                    }
+                } catch (Exception e) {
+                    // Don't save if token is invalid
+                }
+            }
+
+            return ResponseEntity.ok(Map.of("answer", answer));
+        } catch (Exception e) {
+            System.out.println("❌ [Chat] " + e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 
-    // ===== NEW: Text + Image (Gemini Vision) =====
+    // ===== POST: /api/chat/ask-with-image (Gemini Vision) =====
     @PostMapping("/ask-with-image")
     public ResponseEntity<?> askWithImage(
             @RequestParam("image") MultipartFile image,
@@ -119,7 +153,6 @@ public class ChatController {
             User user = userRepository.findByPhone(phone)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            // Create Pageable with sorting (newest first)
             Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
             Page<ChatHistory> historyPage = chatHistoryRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
 

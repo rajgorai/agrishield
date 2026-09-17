@@ -2,6 +2,7 @@ package com.agrishield.backend.service;
 
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -30,21 +31,14 @@ public class ImageStorageService {
     }
 
     public String uploadImage(MultipartFile file) throws Exception {
-        // ===== FILE TYPE VALIDATION TEMPORARILY DISABLED FOR TESTING =====
-        // String contentType = file.getContentType();
-        // if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
-        //     throw new IllegalArgumentException("Only JPG and PNG images are allowed");
-        // }
         System.out.println("⚠️ File type validation bypassed. Uploading: " + file.getOriginalFilename());
 
-        // File size check (still enforced)
         if (file.getSize() > 10 * 1024 * 1024) {
             throw new IllegalArgumentException("File size exceeds 10MB limit");
         }
 
         String fileName = UUID.randomUUID().toString() + ".jpg";
 
-        // Get content type from file, fallback to "image/jpeg" if null
         String contentType = file.getContentType();
         if (contentType == null) {
             contentType = "image/jpeg";
@@ -59,7 +53,7 @@ public class ImageStorageService {
                         .build()
         );
 
-        return "http://localhost:9000/" + bucketName + "/" + fileName;
+        return "/minio/" + bucketName + "/" + fileName;
     }
 
     public String uploadBase64Image(String base64Data, String fileName) throws Exception {
@@ -72,10 +66,9 @@ public class ImageStorageService {
                         .contentType("image/png")
                         .build()
         );
-        return "http://localhost:9000/" + bucketName + "/" + fileName;
+        return "/minio/" + bucketName + "/" + fileName;
     }
 
-    // -------- UPLOAD RAW BYTES (for audio) --------
     public String uploadBytes(byte[] data, String fileName, String contentType) throws Exception {
         minioClient.putObject(
                 PutObjectArgs.builder()
@@ -85,6 +78,28 @@ public class ImageStorageService {
                         .contentType(contentType)
                         .build()
         );
-        return "http://localhost:9000/" + bucketName + "/" + fileName;
+        return "/minio/" + bucketName + "/" + fileName;
+    }
+
+    // ===== NEW: Delete a file from MinIO by its relative URL =====
+    public void deleteFile(String url) {
+        if (url == null || url.isBlank()) return;
+        try {
+            String prefix = "/minio/" + bucketName + "/";
+            if (!url.startsWith(prefix)) {
+                System.out.println("⚠️ Skipping delete, unknown URL format: " + url);
+                return;
+            }
+            String fileName = url.substring(prefix.length());
+            minioClient.removeObject(
+                    RemoveObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(fileName)
+                            .build()
+            );
+            System.out.println("🗑️ Deleted from MinIO: " + fileName);
+        } catch (Exception e) {
+            System.out.println("⚠️ Failed to delete MinIO file: " + url + " — " + e.getMessage());
+        }
     }
 }

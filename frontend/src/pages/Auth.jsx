@@ -23,9 +23,10 @@ const Auth = () => {
     setLoading(true)
     setError('')
 
+    const base = import.meta.env.VITE_API_BASE
     const url = isLogin
-      ? 'http://localhost:8080/api/auth/login'
-      : 'http://localhost:8080/api/auth/register'
+      ? `${base}/api/auth/login`
+      : `${base}/api/auth/register`
 
     const payload = isLogin
       ? { phone: formData.phone, password: formData.password }
@@ -63,15 +64,12 @@ const Auth = () => {
   return (
     <div className="min-h-screen bg-surface-page dark:bg-surface-dark-page">
 
-      {/* ===== THEME TOGGLE (fixed top-right) ===== */}
       <div className="fixed top-5 right-5 z-50">
         <ThemeToggle />
       </div>
 
-      {/* ===== CENTERED LAYOUT (header + card, vertically centered) ===== */}
       <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
 
-        {/* ===== HEADER (compact) ===== */}
         <div className="text-center mb-6 animate-fade-in-up">
           <div className="flex items-center justify-center gap-2.5 mb-2">
             <div className="w-11 h-11 rounded-xl bg-brand-mid flex items-center justify-center shadow-soft">
@@ -89,9 +87,7 @@ const Auth = () => {
           </p>
         </div>
 
-        {/* ===== FORM CARD ===== */}
         <div className="w-full max-w-md card animate-fade-in-up">
-          {/* Header inside card */}
           <div className="mb-6 text-center">
             <h2 className="text-2xl font-bold text-text-primary dark:text-text-dark-primary mb-1">
               {isLogin ? 'Welcome back' : 'Create account'}
@@ -103,7 +99,6 @@ const Auth = () => {
             </p>
           </div>
 
-          {/* Toggle */}
           <div className="toggle-container mb-6">
             <button
               type="button"
@@ -121,7 +116,6 @@ const Auth = () => {
             </button>
           </div>
 
-          {/* Error */}
           {error && (
             <div className="mb-5 p-4 rounded-xl border border-red-200 dark:border-red-800
                             bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300

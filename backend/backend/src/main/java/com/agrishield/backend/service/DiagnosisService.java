@@ -15,14 +15,12 @@ import java.util.UUID;
 @Service
 public class DiagnosisService {
 
-    // ===== ALL FIELDS (TOP) =====
     private final ImageStorageService imageStorageService;
     private final DiseaseRepository diseaseRepository;
     private final DiagnosisRepository diagnosisRepository;
     private final MLClientService mlClientService;
     private final AudioService audioService;
 
-    // ===== CONSTRUCTOR =====
     public DiagnosisService(ImageStorageService imageStorageService,
                             DiseaseRepository diseaseRepository,
                             DiagnosisRepository diagnosisRepository,
@@ -35,26 +33,24 @@ public class DiagnosisService {
         this.audioService = audioService;
     }
 
-    // ===== MAIN DIAGNOSE METHOD (NOW ACCEPTS MODEL PARAMETER) =====
     public Map<String, Object> diagnose(MultipartFile image, UUID userId, String language, String model) throws Exception {
 
-        // 0. Switch Python model if R or J is specified
-        if (model != null && (model.equalsIgnoreCase("R") || model.equalsIgnoreCase("J"))) {
-            mlClientService.switchModel(model.toUpperCase());
-        } else {
-            model = "J"; // Default
+        // 0. Validate model (NO more switchModel call — model is per request now)
+        if (model == null || (!model.equalsIgnoreCase("R") && !model.equalsIgnoreCase("J"))) {
+            model = "J";
         }
+        model = model.toUpperCase();
 
         // 1. Upload image to MinIO
         String imageUrl = imageStorageService.uploadImage(image);
 
-        // 2. Call Python AI service to get prediction
-        MLPrediction prediction = mlClientService.predict(image);
+        // 2. Call Python AI service (model passed per request)
+        MLPrediction prediction = mlClientService.predict(image, model);
         String diseaseLabel = prediction.getTopClass();
         double confidence = prediction.getConfidence();
         int classIndex = prediction.getTopClassIndex();
 
-        // ===== CONFIDENCE THRESHOLD CHECK (SAFETY NET) =====
+        // ===== CONFIDENCE THRESHOLD CHECK =====
         if (confidence < 0.60) {
             Map<String, Object> lowConfidenceResponse = new HashMap<>();
             lowConfidenceResponse.put("message", "Please upload a clear, close-up leaf photo.");
@@ -78,11 +74,11 @@ public class DiagnosisService {
 
         diagnosisRepository.save(diagnosis);
 
-        // ===== 5. Grad-CAM heatmap (ONLY WORKS WHEN MODEL = R) =====
+        // ===== 5. Grad-CAM heatmap (only for R) =====
         String heatmapUrl = null;
         if (model.equalsIgnoreCase("R")) {
             try {
-                String heatmapBase64 = mlClientService.getGradCam(image, classIndex);
+                String heatmapBase64 = mlClientService.getGradCam(image, classIndex, model);
                 String heatmapFileName = "heatmap-" + diagnosis.getId() + ".png";
                 heatmapUrl = imageStorageService.uploadBase64Image(heatmapBase64, heatmapFileName);
                 diagnosis.setHeatmapUrl(heatmapUrl);
@@ -110,15 +106,14 @@ public class DiagnosisService {
         response.put("confidence", confidence);
         response.put("treatment", treatmentText);
         response.put("imageUrl", imageUrl);
-        response.put("heatmapUrl", heatmapUrl);   // null when Model J
+        response.put("heatmapUrl", heatmapUrl);
         response.put("audioUrl", audioUrl);
         response.put("top3", prediction.getTop3());
-        response.put("modelUsed", model.toUpperCase());   // NEW field
+        response.put("modelUsed", model);
 
         return response;
     }
 
-    // ===== LANGUAGE HELPERS =====
     private String getDiseaseNameByLanguage(Disease disease, String language) {
         switch (language.toLowerCase()) {
             case "bn": return disease.getDiseaseNameBn();
