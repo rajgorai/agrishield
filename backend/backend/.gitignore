@@ -39,3 +39,10 @@ __pycache__/
 # Node
 node_modules/
 dist/
+
+# S1 and S2 models (large — do not commit💀)
+ml_service/models/jktk_x.pt
+ml_service/models/model.safetensors
+ml_service/models/*.pt
+ml_service/models/*.safetensors
+ml_service/models/*.json

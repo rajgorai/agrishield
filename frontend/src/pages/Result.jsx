@@ -217,11 +217,15 @@ const Result = () => {
             <div className="flex items-center justify-center gap-2 text-xs text-text-muted dark:text-text-dark-muted">
               <span>{t.resultModelUsed}:</span>
               <span className={`px-2.5 py-1 rounded-full font-bold ${
-                diagnosis.modelUsed === 'R'
-                  ? 'bg-brand-pale dark:bg-brand-dark text-brand-mid dark:text-brand-light'
-                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-              }`}>
-                {diagnosis.modelUsed === 'R' ? 'R · Classic' : 'J · Jumbo'}
+                diagnosis.modelUsed === 'J'  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' :
+                diagnosis.modelUsed === 'S1' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' :
+                diagnosis.modelUsed === 'R'  ? 'bg-brand-pale dark:bg-brand-dark text-brand-mid dark:text-brand-light' :
+                                 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                }`}>
+                {diagnosis.modelUsed === 'R'  ? 'R · Classic' :
+                diagnosis.modelUsed === 'J'  ? 'J · Jumbo' :
+                diagnosis.modelUsed === 'S1' ? 'S1 · Supra Detect' :
+                                  'S2 · Supra Classify'}
               </span>
             </div>
 

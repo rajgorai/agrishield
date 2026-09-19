@@ -81,10 +81,14 @@ public class AuthController {
         }
 
         String token = jwtUtil.generateToken(user.getPhone());
+
         Map<String, String> response = new HashMap<>();
         response.put("token", token);
         response.put("phone", user.getPhone());
         response.put("name", user.getName());
+        response.put("preferredLanguage",
+                user.getPreferredLanguage() != null ? user.getPreferredLanguage() : "en");
+
         return ResponseEntity.ok(response);
     }
 

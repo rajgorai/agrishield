@@ -1,3 +1,4 @@
+import { getUser } from '../utils/storage'
 import React, { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
@@ -9,18 +10,26 @@ import { useLanguage } from '../contexts/LanguageContext'
 
 const Dashboard = () => {
   const navigate = useNavigate()
-  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const user = getUser()
   const { t } = useTranslation()
   const { language, setLanguage } = useLanguage()
 
   const [selectedFile, setSelectedFile] = useState(null)
   const [preview, setPreview] = useState(null)
-  const [model, setModel] = useState('R')
+  const [model, setModel] = useState(() => {
+  const saved = localStorage.getItem('selected_model')
+  return ['R', 'J', 'S1', 'S2'].includes(saved) ? saved : 'R'
+  })
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [cameraOpen, setCameraOpen] = useState(false)
   const fileInputRef = useRef(null)
+
+  // Persist model choice
+  useEffect(() => {
+    localStorage.setItem('selected_model', model)
+  }, [model])
 
   useEffect(() => {
     if (selectedFile) {
@@ -44,6 +53,7 @@ const Dashboard = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     localStorage.removeItem('language')
+    localStorage.removeItem('selected_model')
     sessionStorage.removeItem('chat_messages')
     window.location.href = '/'
   }
@@ -116,11 +126,27 @@ const Dashboard = () => {
   }
 
   const greeting = () => {
-    const hour = new Date().getHours()
-    if (hour < 12) return t.greetingMorning
-    if (hour < 17) return t.greetingAfternoon
+    const now = new Date()
+    const hour = now.getHours()
+    const month = now.getMonth() // 0 = Jan, 11 = Dec
+
+    // India seasonal sunset:
+    //   Winter (Nov, Dec, Jan, Feb) → sunset ~5 PM → afternoon ends at 17:00
+    //   Summer (Mar–Oct)            → sunset ~6 PM → afternoon ends at 18:00
+    const isWinter = [10, 11, 0, 1].includes(month)
+    const afternoonEndHour = isWinter ? 17 : 18
+
+    if (hour >= 5 && hour < 12) return t.greetingMorning
+    if (hour >= 12 && hour < afternoonEndHour) return t.greetingAfternoon
     return t.greetingEvening
   }
+
+  const MODEL_OPTIONS = [
+    { key: 'R',  short: 'R',  title: 'Classic – 38 classes, Grad-CAM' },
+    { key: 'J',  short: 'J',  title: 'Jumbo – 88 classes' },
+    { key: 'S1', short: 'S1', title: 'Sup1 – KrishiBondhu, 116 classes, detection' },
+    { key: 'S2', short: 'S2', title: 'Sup2 – AgroMind NFNet, 88 classes, high accuracy' },
+  ]
 
   return (
     <div className="min-h-screen bg-surface-page dark:bg-surface-dark-page">
@@ -145,37 +171,27 @@ const Dashboard = () => {
               </svg>
             </button>
 
-            {/* R/J toggle (desktop) */}
+            {/* 4-way model toggle (desktop) */}
             <div className="hidden md:inline-flex items-center p-1 rounded-full
                             bg-brand-pale dark:bg-surface-dark-elevated
                             shadow-md dark:shadow-none
                             border border-brand-light/30 dark:border-transparent">
-              <button
-                type="button"
-                onClick={() => setModel('R')}
-                title="Classic – 38 classes with Grad-CAM"
-                className={`px-4 py-1.5 rounded-full text-xs font-bold
-                           transition-all duration-200 ${
-                  model === 'R'
-                    ? 'bg-brand-mid text-white shadow-md'
-                    : 'text-text-muted dark:text-text-dark-muted hover:text-brand-mid dark:hover:text-brand-light'
-                }`}
-              >
-                R
-              </button>
-              <button
-                type="button"
-                onClick={() => setModel('J')}
-                title="Jumbo – 88 classes"
-                className={`px-4 py-1.5 rounded-full text-xs font-bold
-                           transition-all duration-200 ${
-                  model === 'J'
-                    ? 'bg-brand-mid text-white shadow-md'
-                    : 'text-text-muted dark:text-text-dark-muted hover:text-brand-mid dark:hover:text-brand-light'
-                }`}
-              >
-                J
-              </button>
+              {MODEL_OPTIONS.map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setModel(m.key)}
+                  title={m.title}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold
+                             transition-all duration-200 ${
+                    model === m.key
+                      ? 'bg-brand-mid text-white shadow-md'
+                      : 'text-text-muted dark:text-text-dark-muted hover:text-brand-mid dark:hover:text-brand-light'
+                  }`}
+                >
+                  {m.short}
+                </button>
+              ))}
             </div>
 
             <div className="flex items-center gap-2">
@@ -317,23 +333,20 @@ const Dashboard = () => {
                 <p className="text-xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-dark-muted mb-2">
                   Model
                 </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setModel('R')}
-                    className={`py-2 rounded-lg text-sm font-semibold transition-colors ${
-                      model === 'R' ? 'bg-brand-mid text-white shadow-md' : 'bg-gray-100 dark:bg-surface-dark-elevated text-text-muted'
-                    }`}
-                  >
-                    R
-                  </button>
-                  <button
-                    onClick={() => setModel('J')}
-                    className={`py-2 rounded-lg text-sm font-semibold transition-colors ${
-                      model === 'J' ? 'bg-brand-mid text-white shadow-md' : 'bg-gray-100 dark:bg-surface-dark-elevated text-text-muted'
-                    }`}
-                  >
-                    J
-                  </button>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {MODEL_OPTIONS.map((m) => (
+                    <button
+                      key={m.key}
+                      onClick={() => setModel(m.key)}
+                      className={`py-2 rounded-lg text-xs font-semibold transition-colors ${
+                        model === m.key
+                          ? 'bg-brand-mid text-white shadow-md'
+                          : 'bg-gray-100 dark:bg-surface-dark-elevated text-text-muted'
+                      }`}
+                    >
+                      {m.short}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -431,10 +444,12 @@ const Dashboard = () => {
                        transition-colors duration-200
                        p-6 text-center"
           >
-            {preview ? (
+            {selectedFile ? (
               <div>
-                <img src={preview} alt="Preview"
-                     className="max-h-56 mx-auto rounded-lg shadow-soft mb-3" />
+                {preview && (
+                  <img src={preview} alt="Preview"
+                    className="max-h-56 mx-auto rounded-lg shadow-soft mb-3" />
+                )}
                 <p className="text-sm text-text-muted dark:text-text-dark-muted">
                   {selectedFile.name} · {(selectedFile.size / 1024).toFixed(0)} KB
                 </p>
@@ -552,7 +567,7 @@ const Dashboard = () => {
         <div className="mt-6 p-4 rounded-xl bg-brand-pale dark:bg-surface-dark-elevated
                         border border-brand-light/40 dark:border-border-dark">
           <p className="text-sm text-text-secondary dark:text-text-dark-secondary">
-            <span className="font-semibold">{t.tipLabel}</span> {t.tipBody}
+            <span className="font-semibold">{t.tipLabel}</span> R for Grad-CAM, J for broad coverage, S1 for detection, S2 for highest accuracy.
           </p>
         </div>
       </main>

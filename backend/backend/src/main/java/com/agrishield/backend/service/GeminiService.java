@@ -113,7 +113,6 @@ public class GeminiService {
 
     // ===== UPDATED: askQuestion accepts conversation history =====
     public String askQuestion(String question, List<Map<String, String>> history) {
-        // List of models to try: current active, then known working fallbacks
         List<String> modelsToTry = new ArrayList<>();
         modelsToTry.add(activeModelName);
         modelsToTry.add("gemini-3.6-flash");
@@ -171,7 +170,16 @@ public class GeminiService {
                     List<Map<String, Object>> candidates = (List<Map<String, Object>>) responseBody.get("candidates");
                     if (!candidates.isEmpty()) {
                         Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
-                        List<Map<String, Object>> parts = (List<Map<String, Object>>) content.get("parts");
+                        if (content == null) {
+                            System.out.println("⚠️ [Gemini] Model " + model + " returned null content. Trying next.");
+                            continue;
+                        }
+                        Object partsObj = content.get("parts");
+                        if (!(partsObj instanceof List)) {
+                            System.out.println("⚠️ [Gemini] Model " + model + " returned no parts. Trying next.");
+                            continue;
+                        }
+                        List<Map<String, Object>> parts = (List<Map<String, Object>>) partsObj;
                         if (!parts.isEmpty()) {
                             return (String) parts.get(0).get("text");
                         }
@@ -190,7 +198,7 @@ public class GeminiService {
     public String askWithImage(String question, byte[] imageBytes, String mimeType) {
         List<String> modelsToTry = new ArrayList<>();
         modelsToTry.add(activeModelName);
-        modelsToTry.add("gemini-2.5-flash");
+        modelsToTry.add("gemini-3.6-flash");
         modelsToTry.add("gemini-3.5-flash");
 
         for (String model : modelsToTry) {
@@ -243,7 +251,16 @@ public class GeminiService {
                     List<Map<String, Object>> candidates = (List<Map<String, Object>>) responseBody.get("candidates");
                     if (!candidates.isEmpty()) {
                         Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
-                        List<Map<String, Object>> respParts = (List<Map<String, Object>>) content.get("parts");
+                        if (content == null) {
+                            System.out.println("⚠️ [Gemini Vision] Model " + model + " returned null content. Trying next.");
+                            continue;
+                        }
+                        Object respPartsObj = content.get("parts");
+                        if (!(respPartsObj instanceof List)) {
+                            System.out.println("⚠️ [Gemini Vision] Model " + model + " returned no parts. Trying next.");
+                            continue;
+                        }
+                        List<Map<String, Object>> respParts = (List<Map<String, Object>>) respPartsObj;
                         if (!respParts.isEmpty()) {
                             return (String) respParts.get(0).get("text");
                         }
@@ -257,5 +274,103 @@ public class GeminiService {
         }
 
         return "I could not analyze this image right now. Please try again.";
+    }
+
+    // ===== GATEKEEPER: Is this image a plant leaf? =====
+    public boolean isPlantLeaf(byte[] imageBytes, String mimeType) {
+        List<String> modelsToTry = new ArrayList<>();
+        modelsToTry.add(activeModelName);
+        modelsToTry.add("gemini-3.6-flash");
+        modelsToTry.add("gemini-3.5-flash");
+
+        // Strict, deterministic prompt
+        String prompt =
+                "You are an image classifier. Your ONLY job is to say whether the image shows a real plant leaf.\n\n" +
+                        "Answer with EXACTLY one word: YES or NO.\n\n" +
+                        "Answer YES if the image clearly shows:\n" +
+                        "- A single plant leaf (healthy or diseased)\n" +
+                        "- Any leaf colour: green, yellow, brown, black spots, wilted\n" +
+                        "- Close-up photos of leaves on any background\n\n" +
+                        "Answer NO if the image shows:\n" +
+                        "- A person, face, body part, or selfie\n" +
+                        "- An animal, insect, or object\n" +
+                        "- A wall, floor, sky, screen, or drawing\n" +
+                        "- An image that is too dark, blurry, or ambiguous to identify a leaf\n\n" +
+                        "If you are not sure, answer NO. Do NOT explain. Just YES or NO.";
+
+        for (String model : modelsToTry) {
+            try {
+                String apiUrl = "https://generativelanguage.googleapis.com/v1/models/"
+                        + model + ":generateContent?key=" + apiKey;
+
+                List<Map<String, Object>> parts = new ArrayList<>();
+                parts.add(Map.of("text", prompt));
+
+                String base64 = Base64.getEncoder().encodeToString(imageBytes);
+                Map<String, Object> inlineData = new HashMap<>();
+                inlineData.put("mime_type",
+                        (mimeType != null && mimeType.startsWith("image/")) ? mimeType : "image/jpeg");
+                inlineData.put("data", base64);
+
+                Map<String, Object> imagePart = new HashMap<>();
+                imagePart.put("inline_data", inlineData);
+                parts.add(imagePart);
+
+                Map<String, Object> contents = new HashMap<>();
+                contents.put("parts", parts);
+
+                // KEY: temperature 0 for deterministic output
+                Map<String, Object> generationConfig = new HashMap<>();
+                generationConfig.put("temperature", 0.0);
+                generationConfig.put("topP", 1.0);
+                generationConfig.put("maxOutputTokens", 5);
+
+                Map<String, Object> requestBody = new HashMap<>();
+                requestBody.put("contents", List.of(contents));
+                requestBody.put("generationConfig", generationConfig);
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+
+                ResponseEntity<Map> response = restTemplate.exchange(
+                        apiUrl, HttpMethod.POST, requestEntity, Map.class);
+
+                Map<String, Object> body = response.getBody();
+                if (body != null && body.containsKey("candidates")) {
+                    List<Map<String, Object>> candidates = (List<Map<String, Object>>) body.get("candidates");
+                    if (!candidates.isEmpty()) {
+                        Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
+                        if (content == null) {
+                            System.out.println("⚠️ [Gatekeeper] " + model + " returned null content (safety filter?). Trying next.");
+                            continue;
+                        }
+
+                        Object partsObj = content.get("parts");
+                        if (!(partsObj instanceof List)) {
+                            System.out.println("⚠️ [Gatekeeper] " + model + " returned no parts (safety filter?). Trying next.");
+                            continue;
+                        }
+
+                        List<Map<String, Object>> respParts = (List<Map<String, Object>>) partsObj;
+                        if (!respParts.isEmpty()) {
+                            String answer = ((String) respParts.get(0).get("text")).trim().toUpperCase();
+                            System.out.println("🍃 [Gatekeeper] Gemini raw response: '" + answer + "'");
+
+                            // Strict parsing — must START with YES, else reject
+                            boolean isLeaf = answer.startsWith("YES");
+                            System.out.println("🍃 [Gatekeeper] Decision: " + (isLeaf ? "LEAF ✅" : "NOT LEAF ❌"));
+                            return isLeaf;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("⚠️ [Gatekeeper] " + model + " failed: " + e.getMessage());
+            }
+        }
+
+        // Fail-open: if Gemini is entirely unreachable, allow through
+        System.out.println("⚠️ [Gatekeeper] All Gemini models failed — allowing through (fail-open)");
+        return true;
     }
 }

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { getUser } from '../utils/storage'
 
 const LanguageContext = createContext()
 
@@ -6,9 +7,14 @@ export const LanguageProvider = ({ children }) => {
   const [language, setLanguageState] = useState(() => {
     // Priority: saved UI language > user's preferred language > English
     const stored = localStorage.getItem('language')
-    if (stored) return stored
-    const user = JSON.parse(localStorage.getItem('user') || '{}')
-    return user.preferredLanguage || 'en'
+    if (stored === 'en' || stored === 'bn' || stored === 'hi') return stored
+
+    const user = getUser() // Safe parse — returns {} if corrupted
+    const preferred = user.preferredLanguage
+    if (preferred === 'en' || preferred === 'bn' || preferred === 'hi') {
+      return preferred
+    }
+    return 'en'
   })
 
   useEffect(() => {
@@ -16,7 +22,9 @@ export const LanguageProvider = ({ children }) => {
   }, [language])
 
   const setLanguage = (code) => {
-    setLanguageState(code)
+    if (code === 'en' || code === 'bn' || code === 'hi') {
+      setLanguageState(code)
+    }
   }
 
   return (

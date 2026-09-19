@@ -1,3 +1,4 @@
+import { setUser } from '../utils/storage'
 import React, { useState } from 'react'
 import axios from 'axios'
 import ThemeToggle from '../components/ThemeToggle'
@@ -44,11 +45,19 @@ const Auth = () => {
 
       if (isLogin) {
         localStorage.setItem('token', res.data.token)
-        localStorage.setItem(
-          'user',
-          JSON.stringify({ phone: res.data.phone, name: res.data.name })
-        )
-        window.location.href = '/dashboard'
+
+        const preferredLang = res.data.preferredLanguage || 'en'
+
+      setUser({
+        phone: res.data.phone,
+        name: res.data.name,
+        preferredLanguage: preferredLang,
+      })
+    
+      // UI language- so LanguageContext picks it up immediately 😀
+      localStorage.setItem('language', preferredLang)
+    
+      window.location.href = '/dashboard'
       } else {
         alert('Registration successful! Please login.')
         setIsLogin(true)

@@ -7,4 +7,7 @@ import java.util.UUID;
 
 public interface DiseaseRepository extends JpaRepository<Disease, UUID> {
     Optional<Disease> findByModelClassLabel(String modelClassLabel);
+
+    // Case-insensitive lookup — handles S1/S2 labels with different capitalization
+    Optional<Disease> findByModelClassLabelIgnoreCase(String modelClassLabel);
 }

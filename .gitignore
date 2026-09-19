@@ -39,3 +39,14 @@ Thumbs.db
 
 # ============ LOGS ============
 *.log
+
+
+# ML models (too large for Git🦣)
+backend/backend/ml_service/models/*.pt
+backend/backend/ml_service/models/*.safetensors
+backend/backend/ml_service/models/*.json
+
+# ML debug exports
+backend/backend/ml_service/s1_labels.txt
+backend/backend/ml_service/s2_labels.txt
+backend/backend/ml_service/s2_class_names.txt

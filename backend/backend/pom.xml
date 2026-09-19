@@ -97,6 +97,15 @@
 			<artifactId>google-cloud-aiplatform</artifactId>
 			<version>3.30.0</version>
 		</dependency>
+
+		<!-- ========================================== -->
+		<!-- OpenCV - Local face detection (no API)     -->
+		<!-- ========================================== -->
+		<dependency>
+			<groupId>org.openpnp</groupId>
+			<artifactId>opencv</artifactId>
+			<version>4.9.0-0</version>
+		</dependency>
 	</dependencies>
 
 	<build>
